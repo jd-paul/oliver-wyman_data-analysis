@@ -2,18 +2,17 @@
 
 import React from 'react';
 import type { Session } from '@supabase/supabase-js';
-
+import EmissionsAnalysis from '../../components/EmissionsAnalysis';
 interface DashboardPageProps {
   session?: Session;
 }
 
 const DashboardPage: React.FC<DashboardPageProps> = ({ session }) => {
   return (
-    <div>
-      <h1>You are authenticated</h1>
-      <pre className="text-sm text-gray-600">
-        {JSON.stringify(session, null, 2)}
-      </pre>
+    <div className="space-y-6">      
+      <div className="bg-white rounded-lg shadow">
+        <EmissionsAnalysis />
+      </div>
     </div>
   );
 };
