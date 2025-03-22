@@ -11,3 +11,5 @@ venv/
 nextjs_component/node_modules/
 nextjs_component/.next/
 nextjs_component/.env.local
+
+.DS_Store
