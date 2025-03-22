@@ -1,0 +1,13 @@
+# Ignore Python stuff
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Ignore Jupyter stuff
+.ipynb_checkpoints/
+
+# Ignore Node.js stuff
+nextjs_component/node_modules/
+nextjs_component/.next/
+nextjs_component/.env.local
