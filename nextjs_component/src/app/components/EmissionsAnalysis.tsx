@@ -51,8 +51,6 @@ interface APIResponse {
   };
 }
 
-interface EmissionsAnalysisProps {}
-
 export default function EmissionsAnalysis() {
   const [products, setProducts] = useState<ProcessedProduct[]>([]);
   const [totals, setTotals] = useState<APIResponse['totals'] | null>(null);
@@ -378,17 +376,7 @@ export default function EmissionsAnalysis() {
           <div className="bg-blue-50 p-4 rounded-lg">
             <h4 className="font-semibold text-blue-900 mb-2">Revenue Impact Analysis</h4>
             <p className="text-blue-800">
-              The promotion is expected to deliver significant financial benefits:
-            </p>
-            <ul className="list-disc pl-5 text-blue-800 mt-2">
-              <li>Current July Revenue: RM {(totals?.companyBaselineRevenue || 0).toLocaleString()}</li>
-              <li>Promoted Products Current Revenue: RM {(totals?.promotedProductsBaselineRevenue || 0).toLocaleString()} ({totals?.promotedProductsShareOfRevenue.toFixed(1)}% of total)</li>
-              <li>Projected July Revenue: RM {(totals?.companyProjectedRevenue || 0).toLocaleString()}</li>
-              <li>Overall Revenue Change: {totals?.companyRevenueChange.toFixed(2)}%</li>
-              <li>Promoted Products Revenue Change: {totals?.promotedProductsRevenueChange.toFixed(2)}%</li>
-            </ul>
-            <p className="text-blue-800 mt-2">
-              The promotion's revenue impact is driven by a combination of increased volume and strategic pricing. 
+              The promotion&apos;s revenue impact is driven by a combination of increased volume and strategic pricing. 
               While the 20% discount reduces the per-unit revenue, the expected volume increase of 51.4% more than 
               compensates for the price reduction, leading to a projected revenue increase of 21.2% for the promoted products.
             </p>
@@ -427,16 +415,16 @@ export default function EmissionsAnalysis() {
               <li>Average Margin: {products.reduce((acc, p) => acc + p.marginPercent, 0) / products.length * 100}%</li>
             </ul>
             <p className="text-purple-800 mt-2">
-              The promotion's success is underpinned by strong price elasticity among our environmentally conscious 
+              The promotion&apos;s success is underpinned by strong price elasticity among our environmentally conscious 
               customer base, with volume increases more than offsetting the price reductions.
             </p>
           </div>
           
           <p className="mt-4">
             <strong>Strategic Value:</strong> This promotion represents a win-win strategy, combining environmental 
-            responsibility with business growth. By offering discounts on our lowest-emission products during July's 
-            peak shopping season, we're not only driving revenue growth but also positioning ourselves as a leader 
-            in sustainable retail practices. The promotion's timing aligns perfectly with increased summer shopping 
+            responsibility with business growth. By offering discounts on our lowest-emission products during July&apos;s 
+            peak shopping season, we&apos;re not only driving revenue growth but also positioning ourselves as a leader 
+            in sustainable retail practices. The promotion&apos;s timing aligns perfectly with increased summer shopping 
             activity, maximizing its potential impact on both sales and sustainability goals.
           </p>
         </div>

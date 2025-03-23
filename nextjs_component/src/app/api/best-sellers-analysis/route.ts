@@ -65,35 +65,47 @@ export async function GET() {
     const julySales = sales.filter(record => record.TransactionMonth === '7');
     console.log(`Found ${julySales.length} July sales records`);
 
-    // Calculate total sales by product
-    const productSales = new Map<string, number>();
-    julySales.forEach(record => {
-      const sales = parseFloat(record.EstimatedSales);
-      productSales.set(record.ProductKey, (productSales.get(record.ProductKey) || 0) + sales);
-    });
+    // Calculate sales threshold for top 10% products
+    const sortedSales = julySales
+      .map(sale => parseFloat(sale.EstimatedSales))
+      .sort((a, b) => b - a);
+    const salesThreshold = sortedSales[Math.floor(sortedSales.length * 0.1)];
+    const DISCOUNT_RATE = 0.10; // 10% discount
 
-    // Sort products by sales and get top 10%
-    const sortedProducts = Array.from(productSales.entries())
-      .sort(([, a], [, b]) => b - a);
-    const topProductCount = Math.ceil(sortedProducts.length * 0.1);
-    const bestSellers = sortedProducts.slice(0, topProductCount);
+    // Calculate baseline metrics
+    const baselineTotalSales = julySales.reduce((acc, sale) => {
+      const product = products.find(p => p.ProductKey === sale.ProductKey);
+      if (!product) return acc;
+      return acc + parseFloat(sale.EstimatedSales);
+    }, 0);
 
-    console.log(`Selected ${bestSellers.length} best selling products`);
+    // Calculate new metrics with discount
+    const newTotalSales = julySales.reduce((acc, sale) => {
+      const product = products.find(p => p.ProductKey === sale.ProductKey);
+      if (!product) return acc;
+      const isBestSeller = parseFloat(sale.EstimatedSales) >= salesThreshold;
+      if (!isBestSeller) return acc + parseFloat(sale.EstimatedSales);
+      
+      const originalPrice = parseFloat(sale.PredictedPrice);
+      const originalVolume = parseFloat(sale.EstimatedUnitVolume);
+      const elasticity = parseFloat(product.Elasticity);
+      
+      const newPrice = originalPrice * (1 - DISCOUNT_RATE);
+      const newVolume = originalVolume * (1 + elasticity * DISCOUNT_RATE);
+      return acc + (newPrice * newVolume);
+    }, 0);
 
     // Calculate baseline metrics
     let baselineRevenue = 0;
     let baselineTotalProfit = 0;
     let baselineTotalEmissions = 0;
 
-    bestSellers.forEach(([productKey, sales]) => {
-      const product = products.find(p => p.ProductKey === productKey);
+    julySales.forEach((record) => {
+      const product = products.find(p => p.ProductKey === record.ProductKey);
       if (!product) return;
 
-      const julyRecord = julySales.find(s => s.ProductKey === productKey);
-      if (!julyRecord) return;
-
-      const unitVolume = parseFloat(julyRecord.EstimatedUnitVolume);
-      const unitPrice = parseFloat(julyRecord.PredictedPrice);
+      const unitVolume = parseFloat(record.EstimatedUnitVolume);
+      const unitPrice = parseFloat(record.PredictedPrice);
       const margin = parseFloat(product.Margin);
       
       // Calculate baseline metrics
@@ -130,15 +142,12 @@ export async function GET() {
     let newTotalProfit = 0;
     let newTotalEmissions = 0;
 
-    bestSellers.forEach(([productKey, sales]) => {
-      const product = products.find(p => p.ProductKey === productKey);
+    julySales.forEach((record) => {
+      const product = products.find(p => p.ProductKey === record.ProductKey);
       if (!product) return;
 
-      const julyRecord = julySales.find(s => s.ProductKey === productKey);
-      if (!julyRecord) return;
-
-      const unitVolume = parseFloat(julyRecord.EstimatedUnitVolume);
-      const unitPrice = parseFloat(julyRecord.PredictedPrice);
+      const unitVolume = parseFloat(record.EstimatedUnitVolume);
+      const unitPrice = parseFloat(record.PredictedPrice);
       const margin = parseFloat(product.Margin);
       const elasticity = parseFloat(product.Elasticity);
       
@@ -188,6 +197,18 @@ export async function GET() {
         baselineOffsetCost,
         newOffsetCost,
         incrementalOffsetCost: newOffsetCost - baselineOffsetCost
+      },
+      sales: {
+        baselineTotalSales,
+        newTotalSales,
+        baselineRevenue,
+        newRevenue,
+        revenueChange: ((newRevenue - baselineRevenue) / baselineRevenue) * 100
+      },
+      profit: {
+        baselineTotalProfit,
+        newTotalProfit,
+        profitChange: ((newTotalProfit - baselineTotalProfit) / baselineTotalProfit) * 100
       }
     };
 

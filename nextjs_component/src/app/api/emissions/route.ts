@@ -187,7 +187,7 @@ export async function GET() {
     const allProducts = Object.entries(salesByProduct);
     
     // Calculate total July company revenue
-    const totalCompanyRevenue = allProducts.reduce((acc, [_, sales]) => acc + sales.totalSales, 0);
+    const totalCompanyRevenue = allProducts.reduce((acc, [, sales]) => acc + sales.totalSales, 0);
     console.log('Total July company revenue:', totalCompanyRevenue);
 
     // Helper function to convert emissions to kg CO2
