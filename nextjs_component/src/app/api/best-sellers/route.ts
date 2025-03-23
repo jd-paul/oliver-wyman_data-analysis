@@ -45,6 +45,14 @@ const CARBON_OFFSET_RATE = 0.25; // RM per kg CO2
 const DISCOUNT_RATE = 0.10; // 10% discount for best sellers
 const BEST_SELLER_THRESHOLD = 0.9; // Top 10% products
 
+// Helper function to convert emissions to kg CO2
+function convertToKgCO2(value: number, units: string): number {
+  if (units.toLowerCase() === 'g co2') {
+    return value / 1000; // Convert g to kg
+  }
+  return value; // Already in kg
+}
+
 export async function GET() {
   try {
     // Read and parse CSV files
@@ -57,9 +65,16 @@ export async function GET() {
       fs.promises.readFile(path.join(csvDir, 'supplier_table.csv'), 'utf-8')
     ].map(p => p.then(data => parse(data, { columns: true }))));
 
-    // Filter for July sales
+    // Filter for July sales first
     const julySales = salesData.filter((sale: SalesRecord) => sale.TransactionMonth === '7');
     console.log(`Found ${julySales.length} sales records for July`);
+
+    // Sort July sales by EstimatedSales to find top 10 best sellers
+    const sortedJulySales = [...julySales].sort((a, b) => 
+      parseFloat(b.EstimatedSales) - parseFloat(a.EstimatedSales)
+    );
+    const top10BestSellers = sortedJulySales.slice(0, 10);
+    console.log(`Selected top 10 best-selling products for July`);
 
     // Calculate total emissions per unit for each product
     const totalEmissionsPerUnit: { [key: string]: number } = {};
@@ -72,20 +87,13 @@ export async function GET() {
       const supplier = supplierData.find((s: SupplierRecord) => s.SupplierKey === product.SupplierKey);
 
       // Direct sum of emissions like Python implementation
-      const categoryEmissions = category ? parseFloat(category.Est_Emission_Int) : 0;
-      const brandEmissions = brand ? parseFloat(brand.Est_Emission_Int) : 0;
+      const categoryEmissions = category ? convertToKgCO2(parseFloat(category.Est_Emission_Int), category.Units) : 0;
+      const brandEmissions = brand ? convertToKgCO2(parseFloat(brand.Est_Emission_Int), brand.Units) : 0;
       const supplierEmissions = supplier ? 
-        parseFloat(supplier['Distance /mi']) * parseFloat(supplier.Est_Emission_Int) : 0;
+        parseFloat(supplier['Distance /mi']) * convertToKgCO2(parseFloat(supplier.Est_Emission_Int), supplier.Units) : 0;
 
       totalEmissionsPerUnit[product.ProductKey] = categoryEmissions + brandEmissions + supplierEmissions;
     });
-
-    // Sort sales by EstimatedSales to find best sellers
-    const sortedSales = [...julySales].sort((a, b) => 
-      parseFloat(b.EstimatedSales) - parseFloat(a.EstimatedSales)
-    );
-    const thresholdIndex = Math.floor(sortedSales.length * BEST_SELLER_THRESHOLD);
-    const salesThreshold = parseFloat(sortedSales[thresholdIndex].EstimatedSales);
 
     // Calculate baseline metrics
     let baselineTotalSales = 0;
@@ -99,8 +107,8 @@ export async function GET() {
     let newTotalEmissions = 0;
     let newTotalOffsetCost = 0;
 
-    // Process each sale
-    julySales.forEach((sale: SalesRecord) => {
+    // Process each sale (now only top 10 best sellers)
+    top10BestSellers.forEach((sale: SalesRecord) => {
       const product = productData.find((p: ProductRecord) => p.ProductKey === sale.ProductKey);
       if (!product) return;
 
@@ -109,7 +117,6 @@ export async function GET() {
       const margin = parseFloat(product.Margin.replace('%', '')) / 100;
       const elasticity = parseFloat(product.Elasticity);
       const emissionsPerUnit = totalEmissionsPerUnit[sale.ProductKey] || 0;
-      const isBestSeller = parseFloat(sale.EstimatedSales) >= salesThreshold;
 
       // Calculate baseline metrics (like Python implementation)
       const baselineSales = originalPrice * originalVolume;
@@ -117,9 +124,9 @@ export async function GET() {
       const baselineEmissions = originalVolume * emissionsPerUnit;
       const baselineOffsetCost = baselineEmissions * CARBON_OFFSET_RATE;
 
-      // Calculate new metrics with discount (only for best sellers)
-      const newPrice = isBestSeller ? originalPrice * (1 - DISCOUNT_RATE) : originalPrice;
-      const newVolume = isBestSeller ? originalVolume * (1 + elasticity * DISCOUNT_RATE) : originalVolume;
+      // Calculate new metrics with discount (for all top 10 products)
+      const newPrice = originalPrice * (1 - DISCOUNT_RATE);
+      const newVolume = originalVolume * (1 + elasticity * DISCOUNT_RATE);
       const newSales = newPrice * newVolume;
       const newProfit = newSales * margin;
       const newEmissions = newVolume * emissionsPerUnit;
@@ -169,11 +176,11 @@ export async function GET() {
         offsetCost: offsetIncrRatio
       },
       discountRate: DISCOUNT_RATE,
-      bestSellerThreshold: salesThreshold
+      bestSellerThreshold: parseFloat(top10BestSellers[9]?.EstimatedSales || '0') // Sales threshold of the 10th best seller
     };
 
     // Log verification
-    console.log('\n=== Sales & Costs Analysis ===');
+    console.log('\n=== Sales & Costs Analysis (Top 10 Best Sellers in July) ===');
     console.log(`Baseline Total Sales: RM ${baselineTotalSales.toFixed(2)}`);
     console.log(`New Total Sales: RM ${newTotalSales.toFixed(2)}`);
     console.log(`Incremental Sales: RM ${(newTotalSales - baselineTotalSales).toFixed(2)}\n`);
@@ -205,4 +212,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-} 
+}
