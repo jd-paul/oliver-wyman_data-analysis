@@ -9,114 +9,199 @@ interface SalesRecord {
   EstimatedUnitVolume: string;
   PredictedPrice: string;
   EstimatedSales: string;
-  Volume?: string;
-  Sales?: string;
 }
 
 interface ProductRecord {
   ProductKey: string;
-  ProductCost: string;
-  ProductPrice: string;
+  BrandKey: string;
+  SupplierKey: string;
+  ProductCategory_Lvl1: string;
+  ProductCategory_Lvl2: string;
   Margin: string;
+  Elasticity: string;
 }
+
+interface CategoryRecord {
+  ProductCategory_Lvl1: string;
+  ProductCategory_Lvl2: string;
+  Est_Emission_Int: string;
+  Units: string;
+}
+
+interface BrandRecord {
+  BrandKey: string;
+  Est_Emission_Int: string;
+  Units: string;
+}
+
+interface SupplierRecord {
+  SupplierKey: string;
+  'Distance /mi': string;
+  Est_Emission_Int: string;
+  Units: string;
+}
+
+const CARBON_OFFSET_RATE = 0.25; // RM per kg CO2
+const DISCOUNT_RATE = 0.10; // 10% discount for best sellers
+const BEST_SELLER_THRESHOLD = 0.9; // Top 10% products
 
 export async function GET() {
   try {
-    console.log('Processing best sellers data...');
+    // Read and parse CSV files
+    const csvDir = path.join(process.cwd(), 'public', 'CSVs');
+    const [salesData, productData, categoryData, brandData, supplierData] = await Promise.all([
+      fs.promises.readFile(path.join(csvDir, 'Monthly_sales_forecast.csv'), 'utf-8'),
+      fs.promises.readFile(path.join(csvDir, 'product_table.csv'), 'utf-8'),
+      fs.promises.readFile(path.join(csvDir, 'product_category_table.csv'), 'utf-8'),
+      fs.promises.readFile(path.join(csvDir, 'brand_table.csv'), 'utf-8'),
+      fs.promises.readFile(path.join(csvDir, 'supplier_table.csv'), 'utf-8')
+    ].map(p => p.then(data => parse(data, { columns: true }))));
 
-    // Read CSV files
-    const salesData = fs.readFileSync(path.join(process.cwd(), 'public/CSVs/Monthly_sales_forecast.csv'), 'utf-8');
-    const productData = fs.readFileSync(path.join(process.cwd(), 'public/CSVs/product_table.csv'), 'utf-8');
-
-    // Parse CSV data
-    const salesRecords: SalesRecord[] = parse(salesData, { columns: true });
-    const productRecords: ProductRecord[] = parse(productData, { columns: true });
-
-    // Process sales data for July
-    const julySales = salesRecords.filter(record => {
-      const month = parseInt(record.TransactionMonth);
-      return month === 7;
-    });
-
+    // Filter for July sales
+    const julySales = salesData.filter((sale: SalesRecord) => sale.TransactionMonth === '7');
     console.log(`Found ${julySales.length} sales records for July`);
 
-    // Calculate total sales by product
-    const salesByProduct = julySales.reduce((acc, record) => {
-      const volume = parseFloat(record.EstimatedUnitVolume || record.Volume || '0');
-      const sales = parseFloat(record.EstimatedSales || record.Sales || '0');
-      
-      if (!acc[record.ProductKey]) {
-        acc[record.ProductKey] = {
-          totalVolume: 0,
-          totalSales: 0,
-        };
-      }
-      
-      acc[record.ProductKey].totalVolume += volume;
-      acc[record.ProductKey].totalSales += sales;
-      
-      return acc;
-    }, {} as Record<string, { totalVolume: number; totalSales: number; }>);
+    // Calculate total emissions per unit for each product
+    const totalEmissionsPerUnit: { [key: string]: number } = {};
+    productData.forEach((product: ProductRecord) => {
+      const category = categoryData.find((c: CategoryRecord) => 
+        c.ProductCategory_Lvl1 === product.ProductCategory_Lvl1 && 
+        c.ProductCategory_Lvl2 === product.ProductCategory_Lvl2
+      );
+      const brand = brandData.find((b: BrandRecord) => b.BrandKey === product.BrandKey);
+      const supplier = supplierData.find((s: SupplierRecord) => s.SupplierKey === product.SupplierKey);
 
-    // Sort products by sales and select top 10%
-    const sortedProducts = Object.entries(salesByProduct)
-      .sort(([, a], [, b]) => b.totalSales - a.totalSales);
+      // Direct sum of emissions like Python implementation
+      const categoryEmissions = category ? parseFloat(category.Est_Emission_Int) : 0;
+      const brandEmissions = brand ? parseFloat(brand.Est_Emission_Int) : 0;
+      const supplierEmissions = supplier ? 
+        parseFloat(supplier['Distance /mi']) * parseFloat(supplier.Est_Emission_Int) : 0;
 
-    const topProductCount = Math.ceil(sortedProducts.length * 0.1); // Top 10%
-    const selectedProducts = sortedProducts.slice(0, topProductCount);
-
-    console.log(`Selected ${selectedProducts.length} products (top 10%)`);
-
-    // Calculate metrics for selected products
-    const DISCOUNT_PERCENTAGE = 0.10; // 10% discount
-    const PRICE_ELASTICITY = 2.0; // Volume increases by 2% for every 1% price decrease
-
-    const processedProducts = selectedProducts.map(([productKey, data], index) => {
-      const productInfo = productRecords.find(p => p.ProductKey === productKey);
-      const margin = productInfo ? parseFloat(productInfo.Margin) : 0.2; // Default 20% margin if not found
-      
-      const baselineSales = data.totalSales;
-      const volumeUplift = data.totalVolume * (DISCOUNT_PERCENTAGE * PRICE_ELASTICITY);
-      const projectedSales = (baselineSales * (1 - DISCOUNT_PERCENTAGE)) * (1 + (DISCOUNT_PERCENTAGE * PRICE_ELASTICITY));
-
-      return {
-        productKey,
-        rank: index + 1,
-        baselineSales,
-        projectedSales,
-        volumeUplift,
-        percentageVolumeIncrease: (volumeUplift / data.totalVolume) * 100,
-        percentageRevenueChange: ((projectedSales - baselineSales) / baselineSales) * 100,
-        marginPercent: margin
-      };
+      totalEmissionsPerUnit[product.ProductKey] = categoryEmissions + brandEmissions + supplierEmissions;
     });
 
-    // Calculate totals
-    const companyBaselineRevenue = sortedProducts.reduce((sum, [, data]) => sum + data.totalSales, 0);
-    const promotedProductsBaselineRevenue = processedProducts.reduce((sum, p) => sum + p.baselineSales, 0);
-    const promotedProductsProjectedRevenue = processedProducts.reduce((sum, p) => sum + p.projectedSales, 0);
-    const companyProjectedRevenue = companyBaselineRevenue - promotedProductsBaselineRevenue + promotedProductsProjectedRevenue;
+    // Sort sales by EstimatedSales to find best sellers
+    const sortedSales = [...julySales].sort((a, b) => 
+      parseFloat(b.EstimatedSales) - parseFloat(a.EstimatedSales)
+    );
+    const thresholdIndex = Math.floor(sortedSales.length * BEST_SELLER_THRESHOLD);
+    const salesThreshold = parseFloat(sortedSales[thresholdIndex].EstimatedSales);
+
+    // Calculate baseline metrics
+    let baselineTotalSales = 0;
+    let baselineTotalProfit = 0;
+    let baselineTotalEmissions = 0;
+    let baselineTotalOffsetCost = 0;
+
+    // Calculate new metrics with discount
+    let newTotalSales = 0;
+    let newTotalProfit = 0;
+    let newTotalEmissions = 0;
+    let newTotalOffsetCost = 0;
+
+    // Process each sale
+    julySales.forEach((sale: SalesRecord) => {
+      const product = productData.find((p: ProductRecord) => p.ProductKey === sale.ProductKey);
+      if (!product) return;
+
+      const originalPrice = parseFloat(sale.PredictedPrice);
+      const originalVolume = parseFloat(sale.EstimatedUnitVolume);
+      const margin = parseFloat(product.Margin.replace('%', '')) / 100;
+      const elasticity = parseFloat(product.Elasticity);
+      const emissionsPerUnit = totalEmissionsPerUnit[sale.ProductKey] || 0;
+      const isBestSeller = parseFloat(sale.EstimatedSales) >= salesThreshold;
+
+      // Calculate baseline metrics (like Python implementation)
+      const baselineSales = originalPrice * originalVolume;
+      const baselineProfit = baselineSales * margin;
+      const baselineEmissions = originalVolume * emissionsPerUnit;
+      const baselineOffsetCost = baselineEmissions * CARBON_OFFSET_RATE;
+
+      // Calculate new metrics with discount (only for best sellers)
+      const newPrice = isBestSeller ? originalPrice * (1 - DISCOUNT_RATE) : originalPrice;
+      const newVolume = isBestSeller ? originalVolume * (1 + elasticity * DISCOUNT_RATE) : originalVolume;
+      const newSales = newPrice * newVolume;
+      const newProfit = newSales * margin;
+      const newEmissions = newVolume * emissionsPerUnit;
+      const newOffsetCost = newEmissions * CARBON_OFFSET_RATE;
+
+      // Add to totals
+      baselineTotalSales += baselineSales;
+      baselineTotalProfit += baselineProfit;
+      baselineTotalEmissions += baselineEmissions;
+      baselineTotalOffsetCost += baselineOffsetCost;
+
+      newTotalSales += newSales;
+      newTotalProfit += newProfit;
+      newTotalEmissions += newEmissions;
+      newTotalOffsetCost += newOffsetCost;
+    });
+
+    // Calculate incremental ratios
+    const salesIncrRatio = (newTotalSales - baselineTotalSales) / baselineTotalSales;
+    const profitIncrRatio = (newTotalProfit - baselineTotalProfit) / baselineTotalProfit;
+    const emissionsIncrRatio = (newTotalEmissions - baselineTotalEmissions) / baselineTotalEmissions;
+    const offsetIncrRatio = (newTotalOffsetCost - baselineTotalOffsetCost) / baselineTotalOffsetCost;
 
     const response = {
-      products: processedProducts,
-      totals: {
-        companyBaselineRevenue,
-        companyProjectedRevenue,
-        companyRevenueChange: ((companyProjectedRevenue - companyBaselineRevenue) / companyBaselineRevenue) * 100,
-        promotedProductsBaselineRevenue,
-        promotedProductsProjectedRevenue,
-        promotedProductsRevenueChange: ((promotedProductsProjectedRevenue - promotedProductsBaselineRevenue) / promotedProductsBaselineRevenue) * 100,
-        promotedProductsShareOfRevenue: (promotedProductsBaselineRevenue / companyBaselineRevenue) * 100
-      }
+      baseline: {
+        totalSales: baselineTotalSales,
+        totalProfit: baselineTotalProfit,
+        totalEmissions: baselineTotalEmissions,
+        totalOffsetCost: baselineTotalOffsetCost
+      },
+      new: {
+        totalSales: newTotalSales,
+        totalProfit: newTotalProfit,
+        totalEmissions: newTotalEmissions,
+        totalOffsetCost: newTotalOffsetCost
+      },
+      incremental: {
+        sales: newTotalSales - baselineTotalSales,
+        profit: newTotalProfit - baselineTotalProfit,
+        emissions: newTotalEmissions - baselineTotalEmissions,
+        offsetCost: newTotalOffsetCost - baselineTotalOffsetCost
+      },
+      ratios: {
+        sales: salesIncrRatio,
+        profit: profitIncrRatio,
+        emissions: emissionsIncrRatio,
+        offsetCost: offsetIncrRatio
+      },
+      discountRate: DISCOUNT_RATE,
+      bestSellerThreshold: salesThreshold
     };
 
-    console.log('Best sellers data processing complete');
-    return NextResponse.json(response);
+    // Log verification
+    console.log('\n=== Sales & Costs Analysis ===');
+    console.log(`Baseline Total Sales: RM ${baselineTotalSales.toFixed(2)}`);
+    console.log(`New Total Sales: RM ${newTotalSales.toFixed(2)}`);
+    console.log(`Incremental Sales: RM ${(newTotalSales - baselineTotalSales).toFixed(2)}\n`);
 
+    console.log(`Baseline Total Profit: RM ${baselineTotalProfit.toFixed(2)}`);
+    console.log(`New Total Profit: RM ${newTotalProfit.toFixed(2)}`);
+    console.log(`Incremental Profit: RM ${(newTotalProfit - baselineTotalProfit).toFixed(2)}\n`);
+
+    console.log('=== Emissions & Offset Cost Analysis ===');
+    console.log(`Baseline Total Emissions: ${baselineTotalEmissions.toFixed(2)} kg CO₂`);
+    console.log(`New Total Emissions: ${newTotalEmissions.toFixed(2)} kg CO₂`);
+    console.log(`Incremental Emissions: ${(newTotalEmissions - baselineTotalEmissions).toFixed(2)} kg CO₂\n`);
+
+    console.log(`Baseline Offset Cost: RM ${baselineTotalOffsetCost.toFixed(2)}`);
+    console.log(`New Offset Cost: RM ${newTotalOffsetCost.toFixed(2)}`);
+    console.log(`Incremental Offset Cost: RM ${(newTotalOffsetCost - baselineTotalOffsetCost).toFixed(2)}\n`);
+
+    console.log('=== Incremental Ratios ===');
+    console.log(`Incremental Sales / Baseline Sales Ratio: ${(salesIncrRatio * 100).toFixed(2)}%`);
+    console.log(`Incremental Profit / Baseline Profit Ratio: ${(profitIncrRatio * 100).toFixed(2)}%`);
+    console.log(`Incremental Emissions / Baseline Emissions Ratio: ${(emissionsIncrRatio * 100).toFixed(2)}%`);
+    console.log(`Incremental Offset Cost / Baseline Offset Cost Ratio: ${(offsetIncrRatio * 100).toFixed(2)}%`);
+
+    return NextResponse.json(response);
   } catch (error) {
-    console.error('Error processing best sellers data:', error);
+    console.error('Error in best-sellers analysis:', error);
     return NextResponse.json(
-      { error: 'Failed to process best sellers data' },
+      { error: 'Failed to process best-sellers analysis' },
       { status: 500 }
     );
   }
